@@ -16,7 +16,7 @@ Architecture at a glance
 - Settings: loadSettings()/saveSettings() persist user adjustments between sessions.
 - Rendering: class Waterfall draws rows to an offscreen canvas then blits to the visible canvas; also draws axes + overlay.
 - Audio processing: class AudioEngine routes microphone to either:
-  - AnalyserNode path for FFT sizes ≤ 32768 (native FFT + smoothing), or
+  - AnalyserNode path for FFT sizes ≤ 32768 (native FFT), or
   - Custom path for FFT sizes > 32768 using an AudioWorklet to capture samples and a JS radix-2 FFT.
 - Data flow: mic → input GainNode (sensitivity) → [AnalyserNode | AudioWorkletNode] → magnitudes → Waterfall.drawRow().
 
@@ -48,7 +48,6 @@ File layout highlights
     fftSize: null,
     decimation: null,
     dynRange: null,
-    smoothing: null,
     canvas: null,
     status: null,
   };
@@ -56,7 +55,7 @@ File layout highlights
 /**
  * Load persisted settings from localStorage.
  * Returns a settings object with sane defaults if none are stored or parsing fails.
- * Keys: deviceId, fftSize, decimation, dynRange, smoothing, contrast, luminosity, sensitivity, logFreqScale
+ * Keys: deviceId, fftSize, decimation, dynRange, contrast, luminosity, sensitivity, logFreqScale
  */
   function loadSettings() {
     try {
@@ -66,14 +65,13 @@ File layout highlights
         fftSize: 2048,
         decimation: 20, // rows per second
         dynRange: 80, // dB dynamic range
-        smoothing: 0.8,
         contrast: 1.0, // visual contrast multiplier
         luminosity: 0.0, // visual brightness offset
         sensitivity: 1.0, // input gain multiplier
         logFreqScale: false, // linear vs log frequency scale
       }, s);
     } catch (e) {
-      return { deviceId: 'default', fftSize: 2048, decimation: 20, dynRange: 80, smoothing: 0.8, contrast: 1.0, luminosity: 0.0, sensitivity: 1.0, logFreqScale: false };
+      return { deviceId: 'default', fftSize: 2048, decimation: 20, dynRange: 80, contrast: 1.0, luminosity: 0.0, sensitivity: 1.0, logFreqScale: false };
     }
   }
 
@@ -115,7 +113,6 @@ File layout highlights
  * - contrast: number (default 1.0)
  * - luminosity: number (default 0.0)
  * - logFreq: boolean (default false) — when true, frequency axis uses Mel mapping.
- * - overlayLinesProvider: () => string[] — returns overlay lines to render bottom-right.
  */
   class Waterfall {
     constructor(canvas, opts) {
@@ -181,25 +178,27 @@ File layout highlights
       const ac = this.axisContextProvider ? this.axisContextProvider() : null;
       const sampleRate = ac && ac.sampleRate ? ac.sampleRate : 48000;
       const nyquist = sampleRate / 2;
-      // Choose min frequency for log mapping to avoid log(0)
-      let fmin = Math.max(20, nyquist / 20000); // lower bound limited to 20 Hz
-            if (fmin >= nyquist) fmin = nyquist * 0.9999;
-      // Precompute mel scale endpoints
+      // Frequency bounds: lower bound 20 Hz, upper bound 16 kHz (or Nyquist if lower)
+      const fmax = Math.min(16000, nyquist);
+      let fmin = Math.max(20, nyquist / 20000);
+      if (fmin >= fmax) fmin = fmax * 0.9999;
+      // Precompute mel scale endpoints for [fmin, fmax]
       const mel = (f) => 2595 * Math.log10(1 + f / 700);
       const melMin = mel(fmin);
-      const melMax = mel(nyquist);
+      const melMax = mel(fmax);
+      const denomMel = Math.max(1e-9, (melMax - melMin));
       for (let x = 0; x < this.width; x++) {
         let idxF;
         if (this.opts.logFreq) { // mel scale mapping instead of pure log
           const frac = x / (this.width - 1);
           // inverse mel to freq: f = 700*(10^(mel/2595)-1)
-                    const melVal = melMin + frac * (melMax - melMin);
-                    const f = 700 * (Math.pow(10, melVal / 2595) - 1);
+          const melVal = melMin + frac * denomMel;
+          const f = 700 * (Math.pow(10, melVal / 2595) - 1);
           const binF = (f / nyquist) * (bins - 1);
           idxF = Math.max(0, Math.min(bins - 1, binF));
         } else {
           const frac = x / (this.width - 1);
-          const f = fmin + frac * (nyquist - fmin);
+          const f = fmin + frac * (fmax - fmin);
           const binF = (f / nyquist) * (bins - 1);
           idxF = Math.max(0, Math.min(bins - 1, binF));
         }
@@ -221,30 +220,10 @@ File layout highlights
       // Blit buffer to visible canvas
       this.ctx.drawImage(this.buff, 0, 0);
 
-      // Draw axes and overlays periodically
-      const now = performance.now();
-      if (now - this.lastOverlayTs > 200) {
-        this.drawAxes();
-        this.drawOverlay();
-        this.lastOverlayTs = now;
-      }
+      // Always draw axes every frame to avoid flicker
+      this.drawAxes();
     }
 
-/** Draws a small translucent overlay with information in the bottom-right corner. */
-    drawOverlay() {
-      // simple text overlay bottom-right
-      this.ctx.save();
-      this.ctx.fillStyle = 'rgba(0,0,0,0.35)';
-      this.ctx.fillRect(this.width - 220, this.height - 80, 210, 70);
-      this.ctx.fillStyle = '#fff';
-      this.ctx.font = '12px system-ui, sans-serif';
-      this.ctx.textAlign = 'right';
-      const lines = this.opts.overlayLinesProvider ? this.opts.overlayLinesProvider() : [];
-      for (let i = 0; i < lines.length; i++) {
-        this.ctx.fillText(lines[i], this.width - 10, this.height - 60 + i * 16);
-      }
-      this.ctx.restore();
-    }
 
 /** Draw frequency and time axes on top of the spectrogram. */
     drawAxes() {
@@ -267,26 +246,28 @@ File layout highlights
       const sampleRate = ac && ac.sampleRate ? ac.sampleRate : 48000;
       const fftSize = ac && ac.fftSize ? ac.fftSize : 2048;
       const nyquist = sampleRate / 2;
+      const fmax = Math.min(16000, nyquist);
       // choose tick step aiming ~8-12 labels (linear scale)
       const targetTicks = Math.max(6, Math.min(12, Math.floor(this.width / 120)));
-      const rawStep = nyquist / targetTicks;
+      const rawStep = fmax / targetTicks;
       const niceSteps = [10,20,50,100,200,500,1000,2000,5000,10000];
       let step = niceSteps[0];
       for (const s of niceSteps) { if (s >= rawStep) { step = s; break; } }
-      const yAxisY = this.height - 22;
+      const yAxisY = this.height - 22 + 0.5; // align to device pixel
       ctx.beginPath();
-      ctx.moveTo(0, yAxisY);
-      ctx.lineTo(this.width, yAxisY);
+      ctx.moveTo(0.5, yAxisY);
+      ctx.lineTo(this.width + 0.5, yAxisY);
       ctx.stroke();
       if (!this.opts.logFreq) {
         let fmin = 20;
-                if (fmin >= nyquist) fmin = nyquist * 0.9999;
+        if (fmin >= fmax) fmin = fmax * 0.9999;
         const fStart = Math.max(fmin, Math.ceil(fmin / step) * step);
-        for (let f = fStart; f <= nyquist + 1; f += step) {
+        for (let f = fStart; f <= fmax + 1; f += step) {
           const x = (f / nyquist) * (this.width - 1);
+          const xi = Math.round(x) + 0.5;
           ctx.beginPath();
-          ctx.moveTo(x, yAxisY);
-          ctx.lineTo(x, yAxisY + 5);
+          ctx.moveTo(xi, yAxisY);
+          ctx.lineTo(xi, yAxisY + 5);
           ctx.stroke();
           const label = f >= 1000 ? (f/1000).toFixed(f % 1000 === 0 ? 0 : 1) + ' kHz' : Math.round(f) + ' Hz';
           ctx.fillText(label, x, yAxisY + 6);
@@ -294,18 +275,20 @@ File layout highlights
       } else {
         // Mel scale ticks at perceptually spaced frequencies
         let fmin = Math.max(20, nyquist / 20000);
-                if (fmin >= nyquist) fmin = nyquist * 0.9999;
+        const fmaxMel = Math.min(16000, nyquist);
+        if (fmin >= fmaxMel) fmin = fmaxMel * 0.9999;
         const mel = (f) => 2595 * Math.log10(1 + f / 700);
         const melMin = mel(fmin);
-        const melMax = mel(nyquist);
-        const tickFreqs = [20,50,100,200,300,500,700,1000,1500,2000,3000,5000,8000,10000,15000,20000];
+        const melMax = mel(fmaxMel);
+        const tickFreqs = [20,50,100,200,300,500,700,1000,1500,2000,3000,5000,8000,10000,15000,16000,20000];
         for (const fRaw of tickFreqs) {
-          const f = Math.min(nyquist, Math.max(fmin, fRaw));
-          if (f < fmin || f > nyquist) continue;
+          const f = Math.min(fmaxMel, Math.max(fmin, fRaw));
+          if (f < fmin || f > fmaxMel) continue;
           const x = (mel(f) - melMin) / (melMax - melMin) * (this.width - 1);
+          const xi = Math.round(x) + 0.5;
           ctx.beginPath();
-          ctx.moveTo(x, yAxisY);
-          ctx.lineTo(x, yAxisY + 5);
+          ctx.moveTo(xi, yAxisY);
+          ctx.lineTo(xi, yAxisY + 5);
           ctx.stroke();
           const label = f >= 1000 ? (f/1000).toFixed(f % 1000 === 0 ? 0 : 1) + ' kHz' : Math.round(f) + ' Hz';
           ctx.fillText(label, x, yAxisY + 6);
@@ -323,10 +306,10 @@ File layout highlights
       let tStep = niceTime[0];
       const targetTimeTicks = Math.max(4, Math.min(12, Math.floor(this.height / 80)));
       for (const s of niceTime) { if (s >= secondsVisible / targetTimeTicks) { tStep = s; break; } }
-      const rightX = this.width - 48;
+      const rightX = this.width - 48 + 0.5; // align to device pixel
       ctx.beginPath();
-      ctx.moveTo(rightX, 0);
-      ctx.lineTo(rightX, this.height);
+      ctx.moveTo(rightX, 0.5);
+      ctx.lineTo(rightX, this.height + 0.5);
       ctx.stroke();
       for (let t = 0; t <= secondsVisible + 0.001; t += tStep) {
         const y = t * decim; // pixels from top
@@ -348,7 +331,7 @@ File layout highlights
  * - Analyser path (fftSize ≤ 32768): uses WebAudio AnalyserNode to compute frequency data bytes.
  * - Custom path (fftSize > 32768): captures raw samples via AudioWorklet, applies Hann window, radix-2 FFT,
  *   and computes normalized magnitudes (0..1) relative to current peak.
- * Public setters control decimation (rows/s), fftSize, smoothing (analyser only), dynamic range, and sensitivity.
+ * Public setters control decimation (rows/s), fftSize, dynamic range, and sensitivity.
  */
   class AudioEngine {
     constructor(onFrame) {
@@ -357,17 +340,6 @@ File layout highlights
       this._rowQueue = [];
       this._maxQueuedRows = 10000;
       this._hiddenTimer = null;
-      // Custom FFT support for very large FFT sizes (> 32768)
-      this._custom = {
-        enabled: false,
-        ring: null,
-        ringSize: 0,
-        writePos: 0,
-        lastSampleCount: 0,
-        sampleCount: 0,
-        lastProcessTime: 0,
-        workletNode: null,
-      };
       this.onFrame = onFrame;
       this.audio = null;
       this.analyser = null;
@@ -375,7 +347,7 @@ File layout highlights
       this.inputGain = null;
       this.decimation = 20; // rows per second
       this.fftSize = 2048; // power of two
-      this.smoothingTimeConstant = 0.8;
+      this.smoothingTimeConstant = 0;
       this.dynRange = 80; // dB
       this.minDecibels = -100;
       this.maxDecibels = -20;
@@ -391,7 +363,6 @@ File layout highlights
       return {
         decimation: this.decimation,
         fftSize: this.fftSize,
-        smoothing: this.smoothingTimeConstant,
         dynRange: this.dynRange,
         deviceId: this._deviceId,
       };
@@ -405,8 +376,6 @@ File layout highlights
     async start(deviceId) {
       if (!this.audio) this.audio = new (window.AudioContext || window.webkitAudioContext)();
       const sr = this.audio.sampleRate || 48000;
-      // decide path by requested fftSize
-      this._custom.enabled = this.fftSize > 32768;
       if (this._running) return;
       this._running = true;
       this._deviceId = deviceId || this._deviceId || 'default';
@@ -421,60 +390,23 @@ File layout highlights
       this.inputGain.gain.value = this.sensitivity;
       this.srcNode.connect(this.inputGain);
 
-      if (!this._custom.enabled) {
-        this.analyser = this.audio.createAnalyser();
-        this.applyAnalyserSettings();
-        this.inputGain.connect(this.analyser);
-        this._freqData = new Uint8Array(this.analyser.frequencyBinCount);
-        this._nextDue = this.audio.currentTime;
-        this._startedAt = this.audio.currentTime;
-        this._tick();
-      } else {
-        // Custom FFT path using AudioWorklet to capture samples
-        try {
-          if (!this.audio.audioWorklet) throw new Error('AudioWorklet not supported');
-          await this.audio.audioWorklet.addModule('js/capture-worklet.js');
-          const worklet = new AudioWorkletNode(this.audio, 'capture-processor', { numberOfOutputs: 0 });
-          this._custom.workletNode = worklet;
-          this.inputGain.connect(worklet);
-          // init ring buffer
-          const N = this._ensurePowerOfTwo(this.fftSize);
-          this.fftSize = N;
-          this._custom.ringSize = Math.max(N * 2, 131072);
-          this._custom.ring = new Float32Array(this._custom.ringSize);
-          this._custom.writePos = 0;
-          this._custom.sampleCount = 0;
-          this._custom.lastProcessTime = this.audio.currentTime;
-          worklet.port.onmessage = (ev) => this._onSamples(ev.data);
-          this._startedAt = this.audio.currentTime;
-          this._customLoop();
-        } catch (e) {
-          console.warn('Falling back to analyser due to worklet error:', e);
-          // fallback: use analyser path
-          this.analyser = this.audio.createAnalyser();
-          this.applyAnalyserSettings();
-          this.inputGain.connect(this.analyser);
-          this._freqData = new Uint8Array(this.analyser.frequencyBinCount);
-          this._nextDue = this.audio.currentTime;
-          this._startedAt = this.audio.currentTime;
-          this._tick();
-        }
-      }
+      this.analyser = this.audio.createAnalyser();
+      this.applyAnalyserSettings();
+      this.inputGain.connect(this.analyser);
+      this._freqData = new Uint8Array(this.analyser.frequencyBinCount);
+      this._nextDue = this.audio.currentTime;
+      this._startedAt = this.audio.currentTime;
+      this._tick();
     }
 
-/** Stop processing and disconnect worklet if present. */
+/** Stop processing. */
     stop() {
       if (this._hiddenTimer) { clearInterval(this._hiddenTimer); this._hiddenTimer = null; }
       this._running = false;
-      if (this._custom.workletNode) {
-        try { this._custom.workletNode.port.onmessage = null; this._custom.workletNode.disconnect(); } catch (e) {}
-        this._custom.workletNode = null;
-      }
     }
 
-/** Apply analyser parameters and allocate buffer (no-op in custom mode). */
+/** Apply analyser parameters and allocate buffer. */
     applyAnalyserSettings() {
-      if (this._custom.enabled) return; // custom path manages its own FFT
       if (!this.analyser) return;
       // Clamp fftSize to allowed values
       const allowed = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768];
@@ -485,7 +417,7 @@ File layout highlights
         this.fftSize = best;
       }
       this.analyser.fftSize = this.fftSize;
-      this.analyser.smoothingTimeConstant = this.smoothingTimeConstant;
+      this.analyser.smoothingTimeConstant = 0; // no smoothing
 
       // We will use getByteFrequencyData and map 0..255 to dB range; keep defaults reasonable
       this.analyser.minDecibels = -100;
@@ -499,18 +431,13 @@ File layout highlights
       this.decimation = Math.max(1, Math.min(2000, rowsPerSecond));
     }
 
-/** Set FFT size (rounded to nearest pow2). Switches to custom mode if > 32768. */
+/** Set FFT size (rounded to nearest pow2) but capped to AnalyserNode max (32768). */
     setFFTSize(fft) {
       this.fftSize = this._ensurePowerOfTwo(fft);
-      this._custom.enabled = this.fftSize > 32768;
+      if (this.fftSize > 32768) this.fftSize = 32768;
       this.applyAnalyserSettings();
     }
 
-/** Set analyser smoothingTimeConstant in [0,0.99] (ignored in custom mode). */
-    setSmoothing(v) {
-      this.smoothingTimeConstant = Math.max(0, Math.min(0.99, v));
-      this.applyAnalyserSettings();
-    }
 
 /** Set visual dynamic range in dB (used to map analyser/custom magnitudes into [0,1]). */
     setDynRange(db) {
@@ -533,75 +460,6 @@ File layout highlights
       if (this.inputGain) this.inputGain.gain.value = g;
     }
 
-/** Enqueue a chunk of mono samples coming from the AudioWorklet into the ring buffer. */
-    _onSamples(chunk) {
-      if (!this._running || !this._custom.enabled) return;
-      const ring = this._custom.ring;
-      if (!ring) return;
-      const L = chunk.length;
-      let wp = this._custom.writePos;
-      for (let i = 0; i < L; i++) {
-        ring[wp] = chunk[i];
-        wp++; if (wp >= this._custom.ringSize) wp = 0;
-      }
-      this._custom.writePos = wp;
-      this._custom.sampleCount += L;
-    }
-
-/**
-     * Custom FFT processing loop. Throttled by decimation and window duration.
-     * Extracts the latest N samples, windows them, runs FFT, and normalizes magnitudes into [0,1].
-     */
-    _customLoop = () => {
-      if (!this._running || !this._custom.enabled) return;
-      const now = this.audio.currentTime;
-      // compute only as fast as decimation and window duration allow
-      const sr = this.audio.sampleRate || 48000;
-      const windowSec = this.fftSize / sr;
-      const minInterval = Math.max(1 / this.decimation, windowSec / 4); // do not attempt too often
-      if (now - this._custom.lastProcessTime >= minInterval) {
-        const needed = this.fftSize;
-        const have = Math.min(this._custom.sampleCount, this._custom.ringSize);
-        if (have >= needed) {
-          // extract last N samples ending at writePos-1
-          const N = this.fftSize;
-          const wp = this._custom.writePos;
-          const real = new Float32Array(N);
-          const imag = new Float32Array(N);
-          const w = hannWindow(N);
-          for (let i = 0; i < N; i++) {
-            const idx = (wp - N + i);
-            const pos = idx < 0 ? idx + this._custom.ringSize : idx;
-            real[i] = this._custom.ring[pos] * w[i];
-            imag[i] = 0;
-          }
-          fftRadix2(real, imag);
-          const bins = N / 2;
-          const mags = new Float32Array(bins);
-          // Convert to magnitude and approximate dB scaling into 0..1 similar to analyser path
-          let maxMag = 0;
-          for (let i = 0; i < bins; i++) {
-            const re = real[i], im = imag[i];
-            const m = Math.hypot(re, im);
-            if (m > maxMag) maxMag = m;
-          }
-          const eps = 1e-12;
-          for (let i = 0; i < bins; i++) {
-            const re = real[i], im = imag[i];
-            const m = Math.hypot(re, im) + eps;
-            const db = 20 * Math.log10(m / (maxMag + eps));
-            const maxDb = 0; // relative to peak
-            const dyn = this.dynRange;
-            const norm = (db - (maxDb - dyn)) / dyn;
-            mags[i] = Math.max(0, Math.min(1, norm));
-          }
-          this._deliverRow(mags);
-          this._custom.lastProcessTime = now;
-        }
-      }
-      requestAnimationFrame(this._customLoop);
-    }
-
 /**
      * Analyser path animation loop. Reads byte frequency data and maps it into normalized magnitudes
      * using the configured dynamic range window ending at maxDecibels.
@@ -622,13 +480,13 @@ File layout highlights
     setHidden(hidden) {
       const wasHidden = this._hidden;
       this._hidden = !!hidden;
-      // Hidden timers for analyser and custom paths to keep producing at a low rate
+      // Hidden timers for analyser path to keep producing at a low rate
       if (this._hidden && !this._hiddenTimer) {
         const intervalMs = Math.max(50, Math.round(1000 / Math.min(10, Math.max(1, this.decimation))))
         this._hiddenTimer = setInterval(() => {
           if (!this._running) return;
           // produce one frame depending on mode
-          if (!this._custom.enabled && this.analyser && this._freqData) {
+          if (this.analyser && this._freqData) {
             // analyser path sampling
             this.analyser.getByteFrequencyData(this._freqData);
             const bins = this._freqData.length;
@@ -643,18 +501,6 @@ File layout highlights
               mags[i] = Math.max(0, Math.min(1, norm));
             }
             this._deliverRow(mags);
-          } else if (this._custom.enabled) {
-            // Trigger custom loop step by faking lastProcessTime
-            this._custom.lastProcessTime = 0;
-            // Manually invoke one iteration (it will schedule next via rAF when visible, but here interval drives it)
-            const oldRAF = window.requestAnimationFrame;
-            try {
-              // temporarily no-op rAF to avoid scheduling storm
-              window.requestAnimationFrame = (fn) => 0;
-              this._customLoop();
-            } finally {
-              window.requestAnimationFrame = oldRAF;
-            }
           }
         }, intervalMs);
       } else if (!this._hidden && this._hiddenTimer) {
@@ -702,68 +548,6 @@ File layout highlights
     }
   }
 
-  // ===== Custom FFT helpers (radix-2 iterative) =====
-/**
-   * Hann window coefficients.
-   * @param {number} N - window length
-   * @returns {Float32Array}
-   */
-  function hannWindow(N) {
-    const w = new Float32Array(N);
-    const twoPi = 2 * Math.PI;
-    for (let i = 0; i < N; i++) w[i] = 0.5 * (1 - Math.cos(twoPi * i / (N - 1)));
-    return w;
-  }
-/**
-   * Precompute bit-reversed indices for iterative radix-2 FFT.
-   * Complexity O(N log N) total when used once per FFT length.
-   * @param {number} N - FFT length (power of two)
-   * @returns {Uint32Array} indices
-   */
-  function bitReverseIndices(N) {
-    const rev = new Uint32Array(N);
-    const bits = Math.log2(N) | 0;
-    for (let i = 0; i < N; i++) {
-      let x = i, r = 0;
-      for (let b = 0; b < bits; b++) { r = (r << 1) | (x & 1); x >>= 1; }
-      rev[i] = r;
-    }
-    return rev;
-  }
-/**
-   * In-place iterative radix-2 Cooley–Tukey FFT.
-   * @param {Float32Array} real - real part (input and output)
-   * @param {Float32Array} imag - imaginary part (input and output)
-   * Notes: Not the most optimized implementation but adequate for low-rate, long-window updates.
-   */
-  function fftRadix2(real, imag) {
-    const N = real.length;
-    const rev = bitReverseIndices(N);
-    for (let i = 0; i < N; i++) {
-      const j = rev[i];
-      if (j > i) { const tr = real[i]; real[i] = real[j]; real[j] = tr; const ti = imag[i]; imag[i] = imag[j]; imag[j] = ti; }
-    }
-    for (let s = 1; (1 << s) <= N; s++) {
-      const m = 1 << s;
-      const m2 = m >> 1;
-      const theta = -2 * Math.PI / m;
-      let wpr = Math.cos(theta), wpi = Math.sin(theta);
-      for (let k = 0; k < N; k += m) {
-        let wr = 1, wi = 0;
-        for (let j = 0; j < m2; j++) {
-          const tpr = wr * real[k + j + m2] - wi * imag[k + j + m2];
-          const tpi = wr * imag[k + j + m2] + wi * real[k + j + m2];
-          real[k + j + m2] = real[k + j] - tpr;
-          imag[k + j + m2] = imag[k + j] - tpi;
-          real[k + j] += tpr;
-          imag[k + j] += tpi;
-          const tmp = wr;
-          wr = tmp * wpr - wi * wpi;
-          wi = tmp * wpi + wi * wpr;
-        }
-      }
-    }
-  }
 
   // UI setup
 /**
@@ -773,26 +557,28 @@ File layout highlights
   function buildUI() {
     const container = document.createElement('div');
     container.style.padding = '8px';
+    // Ensure page uses full viewport and no default margins introducing extra whitespace
+    document.documentElement.style.height = '100%';
+    document.body.style.height = '100%';
+    document.body.style.margin = '0';
     container.innerHTML = `
       <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center">
         <button id="wf-start">Start</button>
         <button id="wf-stop" disabled>Stop</button>
         <label>Input <select id="wf-device"></select></label>
         <label>FFT <select id="wf-fft">
-          ${[512,1024,2048,4096,8192,16384,32768,65536,131072,262144,524288,1048576].map(v=>`<option value="${v}">${v}</option>`).join('')}
+          ${[512,1024,2048,4096,8192,16384,32768].map(v=>`<option value="${v}">${v}</option>`).join('')}
         </select></label>
-        <label>Decimation (rows/s) <input id="wf-dec" type="number" min="1" max="2000" step="1" style="width:6em"/></label>
+        <label>lines/s <input id="wf-dec" type="number" min="1" max="2000" step="1" style="width:6em"/></label>
         <label>Dyn range (dB) <input id="wf-dyn" type="number" min="10" max="140" step="1" style="width:5em"/></label>
-        <label>Smoothing <input id="wf-smooth" type="range" min="0" max="0.99" step="0.01"/></label>
         <label>Contrast <input id="wf-contrast" type="range" min="0.1" max="3" step="0.01"/></label>
         <label>Luminosity <input id="wf-lum" type="range" min="-0.5" max="0.5" step="0.01"/></label>
         <label>Sensitivity <input id="wf-sens" type="range" min="0.01" max="10" step="0.01"/></label>
         <label><input id="wf-log" type="checkbox"/> Mel Freq</label>
         <span id="wf-status"></span>
       </div>
-      <div style="margin-top:8px; position:relative">
-        <canvas id="wf-canvas" style="width:100%; height:60vh; background:#000; display:block"></canvas>
-        <div style="position:absolute; left:4px; bottom:24px; color:#fff; font:12px system-ui; text-shadow:0 1px 2px #000a">Frequency →, Time ↓</div>
+      <div id="wf-wrap" style="margin-top:8px; position:relative">
+        <canvas id="wf-canvas" style="width:100%; background:#000; display:block"></canvas>
       </div>
     `;
     document.body.innerHTML = '';
@@ -804,12 +590,12 @@ File layout highlights
     ui.fftSize = $('#wf-fft');
     ui.decimation = $('#wf-dec');
     ui.dynRange = $('#wf-dyn');
-    ui.smoothing = $('#wf-smooth');
     ui.contrast = $('#wf-contrast');
     ui.luminosity = $('#wf-lum');
     ui.sensitivity = $('#wf-sens');
     ui.logFreq = $('#wf-log');
     ui.canvas = $('#wf-canvas');
+    ui.wrap = document.querySelector('#wf-wrap');
     ui.status = $('#wf-status');
   }
 
@@ -858,45 +644,55 @@ File layout highlights
     const settings = loadSettings();
     buildUI();
 
-    const { w, h } = fitCanvasToDisplay(ui.canvas);
+    // Helper to size canvas to fill remaining viewport height under the toolbar
+    function sizeCanvasToViewport() {
+      const vpH = window.innerHeight || document.documentElement.clientHeight;
+      const toolbar = document.querySelector('body > div > div'); // the controls div inside container
+      const toolbarH = toolbar ? Math.ceil(toolbar.getBoundingClientRect().height) : 0;
+      const margins = 8 + 8; // top padding (8) + gap under toolbar (8)
+      const targetCssHeight = Math.max(160, Math.floor(vpH - toolbarH - margins));
+      ui.wrap.style.height = targetCssHeight + 'px';
+      ui.canvas.style.height = '92%';
+      ui.canvas.style.width = '100%';
+      const r = fitCanvasToDisplay(ui.canvas);
+      if (waterfall) waterfall.setSize(r.w, r.h);
+    }
+
+    // Create waterfall and engine, then size the canvas and install axis provider
     const waterfall = new Waterfall(ui.canvas, {
       contrast: 1.0,
       luminosity: 0.0,
       logFreq: false,
-      overlayLinesProvider: () => [
-        `FFT: ${engine.fftSize}` + (engine._custom && engine._custom.enabled ? ' (custom)' : ''),
-        `Rows/s: ${engine.decimation}`,
-        `Dyn: ${engine.dynRange} dB`,
-        `Sens: x${engine.sensitivity.toFixed(2)}`,
-        `Ctr:${waterfall.opts.contrast.toFixed(2)} Lum:${waterfall.opts.luminosity.toFixed(2)}`,
-      ],
     });
-    // Axis context provider gives freq/time axis information
-    waterfall.setAxisContextProvider(() => ({
-      sampleRate: engine.audio ? engine.audio.sampleRate : 48000,
-      fftSize: engine.fftSize,
-      decimation: engine.decimation,
-      startedAt: engine._startedAt || 0,
-      now: engine.audio ? engine.audio.currentTime : 0,
-    }));
-    waterfall.setSize(w, h);
-
     const engine = new AudioEngine((mags) => waterfall.drawRow(mags));
+    function installAxisProvider() {
+      waterfall.setAxisContextProvider(() => ({
+        sampleRate: engine.audio ? engine.audio.sampleRate : 48000,
+        fftSize: engine.fftSize,
+        decimation: engine.decimation,
+        startedAt: engine._startedAt || 0,
+        now: engine.audio ? engine.audio.currentTime : 0,
+      }));
+    }
+
+    // Initial layout sizing and provider
+    sizeCanvasToViewport();
+    installAxisProvider();
 
     // Init controls from settings
     ui.fftSize.value = String(settings.fftSize);
     ui.decimation.value = String(settings.decimation);
     ui.dynRange.value = String(settings.dynRange);
-    ui.smoothing.value = String(settings.smoothing);
     ui.contrast.value = String(settings.contrast);
     ui.luminosity.value = String(settings.luminosity);
     ui.sensitivity.value = String(settings.sensitivity);
     ui.logFreq.checked = !!settings.logFreqScale;
 
     engine.setFFTSize(parseInt(ui.fftSize.value, 10));
+    // Reflect capped/adjusted fft size in the UI
+    ui.fftSize.value = String(engine.fftSize);
     engine.setDecimation(parseInt(ui.decimation.value, 10));
     engine.setDynRange(parseInt(ui.dynRange.value, 10));
-    engine.setSmoothing(parseFloat(ui.smoothing.value));
     engine.setSensitivity(parseFloat(ui.sensitivity.value));
 
     waterfall.opts.contrast = parseFloat(ui.contrast.value);
@@ -909,7 +705,7 @@ File layout highlights
         contrast: parseFloat(ui.contrast.value),
         luminosity: parseFloat(ui.luminosity.value),
         sensitivity: parseFloat(ui.sensitivity.value),
-                logFreqScale: !!ui.logFreq.checked,
+        logFreqScale: !!ui.logFreq.checked,
       }));
     }
 
@@ -923,10 +719,6 @@ File layout highlights
     });
     ui.dynRange.addEventListener('change', () => {
       engine.setDynRange(parseInt(ui.dynRange.value, 10));
-      persist();
-    });
-    ui.smoothing.addEventListener('input', () => {
-      engine.setSmoothing(parseFloat(ui.smoothing.value));
       persist();
     });
     ui.contrast.addEventListener('input', () => {
@@ -947,8 +739,7 @@ File layout highlights
     });
 
     window.addEventListener('resize', () => {
-      const r = fitCanvasToDisplay(ui.canvas);
-      waterfall.setSize(r.w, r.h);
+      sizeCanvasToViewport();
     });
 
     ui.startBtn.addEventListener('click', async () => {

@@ -94,7 +94,7 @@ File layout highlights
     // Turbo-like simple gradient
     const x = Math.max(0, Math.min(1, v));
     const r = Math.floor(255 * Math.min(1, Math.max(0, 1.5 * x - 0.2)));
-    const g = Math.floor(255 * Math.min(1, Math.max(0, 1.5 * (1 - Math.abs(x - 0.5) * 2))))
+    const g = Math.floor(255 * Math.min(1, Math.max(0, 1.5 * (1 - Math.abs(x - 0.5) * 2))));
     const b = Math.floor(255 * Math.min(1, Math.max(0, 1.5 * (1 - x) - 0.2)));
     return [r, g, b];
   }
@@ -482,7 +482,7 @@ File layout highlights
       this._hidden = !!hidden;
       // Hidden timers for analyser path to keep producing at a low rate
       if (this._hidden && !this._hiddenTimer) {
-        const intervalMs = Math.max(50, Math.round(1000 / Math.min(10, Math.max(1, this.decimation))))
+        const intervalMs = Math.max(50, Math.round(1000 / Math.min(10, Math.max(1, this.decimation)))) ;
         this._hiddenTimer = setInterval(() => {
           if (!this._running) return;
           // produce one frame depending on mode
@@ -575,7 +575,7 @@ File layout highlights
         <label>Luminosity <input id="wf-lum" type="range" min="-0.5" max="0.5" step="0.01"/></label>
         <label>Sensitivity <input id="wf-sens" type="range" min="0.01" max="10" step="0.01"/></label>
         <label><input id="wf-log" type="checkbox"/> Mel Freq</label>
-        <span id="wf-status"></span>
+        <span id="wf-status" role="status" aria-live="polite"></span>
       </div>
       <div id="wf-wrap" style="margin-top:8px; position:relative">
         <canvas id="wf-canvas" style="width:100%; background:#000; display:block"></canvas>
@@ -752,8 +752,19 @@ File layout highlights
         persist();
       } catch (e) {
         console.error(e);
-        ui.status.textContent = 'Error: ' + e.message;
-        ui.startBtn.disabled = false;
+        const name = e && (e.name || e.constructor && e.constructor.name) || '';
+        let help = '';
+        if (name === 'NotAllowedError' || name === 'SecurityError' || name === 'AbortError') {
+          help = 'Microphone permission was not granted. Click Start to try again after allowing access in your browser.';
+        } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+          help = 'No microphone was found or the selected device is unavailable. Choose a different input and click Start again.';
+        } else if (name === 'NotReadableError') {
+          help = 'The microphone is in use by another application. Close other apps that use the mic and click Start to retry.';
+        } else {
+          help = 'An error occurred. Click Start to retry.';
+        }
+        ui.status.textContent = `Error: ${e.message || name}. ${help}`;
+        ui.startBtn.disabled = false; // re-enable Start for retry
       }
       // After permission, repopulate devices to get labels
       populateDevices(ui.deviceSelect.value);

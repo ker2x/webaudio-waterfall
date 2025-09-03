@@ -245,3 +245,58 @@ textarea {
   }
 }
 
+
+
+/* ========================================================================
+   Dark theme overrides (forced)
+   ======================================================================== */
+:root {
+  color-scheme: dark; /* use dark form controls where supported */
+}
+
+html, body {
+  background-color: #0b0f14; /* deep slate */
+}
+
+body {
+  color: #e6e8eb; /* light text on dark */
+  margin: 0; /* avoid initial flash of white margins */
+}
+
+a { color: #8ab4f8; }
+a:hover, a:focus { color: #aecbfa; }
+
+button, input, select, textarea {
+  background-color: #141a21;
+  color: inherit;
+  border: 1px solid #2a3441;
+  border-radius: 4px;
+}
+
+button {
+  background-color: #1b2330;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+input[type="range"] {
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+label { color: inherit; }
+
+/* App-specific IDs that exist at runtime */
+#wf-wrap { background-color: #0b0f14; }
+#wf-status { color: #cbd5e1; }
+
+/* Accessible focus outline on dark */
+:focus-visible {
+  outline: 2px solid #8ab4f8;
+  outline-offset: 2px;
+}

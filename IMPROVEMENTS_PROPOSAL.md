@@ -6,19 +6,19 @@ Author: Junie (JetBrains)
 ## Goals
 Enhance usability, maintainability, and performance while keeping the app lightweight and framework-free.
 
-## Short-Term (1–2 days)
+## Short-Term
 - UX and Resilience
-  - Re-enable Start after permission errors and show a clear retry message.
+  ~~- Re-enable Start after permission errors and show a clear retry message.~~
   - Add an ARIA live region for status updates; ensure focus management after actions.
 - Config and Constants
   - Extract axis paddings (22px, 48px), frequency clamps (20 Hz, 16 kHz), and fonts into named constants.
   - Move color map parameters to a small module or section with comments.
 - Documentation
-  - Expand README with privacy note (audio stays local), troubleshooting (no sound/device), and known limitations.
+  ~~- Expand README with privacy note (audio stays local), troubleshooting (no sound/device), and known limitations.~~
 - Code Quality
   - Add JSDoc typedefs for settings, axis context, and public APIs of Waterfall and AudioEngine.
 
-## Medium-Term (3–5 days)
+## Medium-Term
 - Color Maps and Themes
   - Offer 2–3 selectable color maps (e.g., Turbo, Viridis, Grayscale). Persist selection.
   - Dark/light UI theme toggle; ensure canvas overlays adapt.
@@ -29,7 +29,7 @@ Enhance usability, maintainability, and performance while keeping the app lightw
   - Optionally skip drawing axes every frame; only redraw on size/setting change to save CPU.
   - Introduce a “max FPS” cap to decouple draw rate from rAF on fast machines.
 
-## Longer-Term (1–2 weeks)
+## Longer-Term
 - Custom FFT Path (Beyond 32768)
   - Implement an AudioWorklet-based sample capture and JS/WASM radix-2 FFT for very large windows.
   - Add window functions (Hann, Hamming, Blackman) and overlap options.
@@ -43,14 +43,9 @@ Enhance usability, maintainability, and performance while keeping the app lightw
   - Add basic unit tests for utilities (mapping, formatting), and a headless canvas smoke test.
   - GitHub Actions to run lint and tests on PRs.
 
-## Rough Effort Estimates
-- Short-Term: 1–2 days
-- Medium-Term: 3–5 days
-- Long-Term: 1–2 weeks
-
 ## Risks and Mitigations
-- getUserMedia permissions can be flaky on file:// — recommend serving over http(s); document this prominently.
-- Large FFTs are CPU-heavy — expose clear guidance and defaults; provide a safe cap.
+~~- getUserMedia permissions can be flaky on file:// — recommend serving over http(s); document this prominently.~~
+~~- Large FFTs are CPU-heavy — expose clear guidance and defaults; provide a safe cap.~~
 - Cross-browser differences — test Chrome, Firefox, Safari; guard features with capability checks.
 
 ## Success Metrics

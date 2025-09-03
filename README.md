@@ -23,7 +23,7 @@ Real-time “waterfall” spectrogram of your microphone input in the browser. I
 - Dyn range (dB): window of decibels mapped into the 0..1 color range.
 - Contrast / Luminosity: visual tuning of the color map mapping.
 - Sensitivity: input gain applied to the microphone signal.
-- Mel Freq: toggles a mel-style horizontal axis mapping.
+- Psychoacoustic frequency scale (Mel): toggles a perceptual (Mel) horizontal frequency axis mapping. Enabled by default.
 
 ## Files of Interest
 - `index.html` — minimal bootstrap HTML. The UI is created dynamically by JavaScript.

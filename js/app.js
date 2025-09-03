@@ -68,10 +68,10 @@ File layout highlights
         contrast: 1.0, // visual contrast multiplier
         luminosity: 0.0, // visual brightness offset
         sensitivity: 1.0, // input gain multiplier
-        logFreqScale: false, // linear vs log frequency scale
+        logFreqScale: true, // linear vs log frequency scale (default: Mel)
       }, s);
     } catch (e) {
-      return { deviceId: 'default', fftSize: 2048, decimation: 20, dynRange: 80, contrast: 1.0, luminosity: 0.0, sensitivity: 1.0, logFreqScale: false };
+      return { deviceId: 'default', fftSize: 2048, decimation: 20, dynRange: 80, contrast: 1.0, luminosity: 0.0, sensitivity: 1.0, logFreqScale: true };
     }
   }
 
@@ -118,7 +118,7 @@ File layout highlights
     constructor(canvas, opts) {
       this.canvas = canvas;
       this.ctx = canvas.getContext('2d', { willReadFrequently: true });
-      this.opts = Object.assign({ contrast: 1.0, luminosity: 0.0, logFreq: false }, opts || {});
+      this.opts = Object.assign({ contrast: 1.0, luminosity: 0.0, logFreq: true }, opts || {});
       this.height = canvas.height;
       this.width = canvas.width;
 
@@ -574,7 +574,7 @@ File layout highlights
         <label>Contrast <input id="wf-contrast" type="range" min="0.1" max="3" step="0.01"/></label>
         <label>Luminosity <input id="wf-lum" type="range" min="-0.5" max="0.5" step="0.01"/></label>
         <label>Sensitivity <input id="wf-sens" type="range" min="0.01" max="10" step="0.01"/></label>
-        <label><input id="wf-log" type="checkbox"/> Mel Freq</label>
+        <label><input id="wf-log" type="checkbox"/> Psychoacoustic frequency scale (Mel)</label>
         <span id="wf-status" role="status" aria-live="polite"></span>
       </div>
       <div id="wf-wrap" style="margin-top:8px; position:relative">
@@ -662,7 +662,7 @@ File layout highlights
     const waterfall = new Waterfall(ui.canvas, {
       contrast: 1.0,
       luminosity: 0.0,
-      logFreq: false,
+      logFreq: true,
     });
     const engine = new AudioEngine((mags) => waterfall.drawRow(mags));
     function installAxisProvider() {

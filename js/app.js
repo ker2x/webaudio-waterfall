@@ -20,7 +20,7 @@ Architecture at a glance
   - Custom path for FFT sizes > 32768 using an AudioWorklet to capture samples and a JS radix-2 FFT.
 - Data flow: mic → input GainNode (sensitivity) → [AnalyserNode | AudioWorkletNode] → magnitudes → Waterfall.drawRow().
 
-Coordinate system + axes
+Coordinate system and axes
 - Horizontal: frequency from left (low) to right (high). Minimum frequency is clamped to 20 Hz.
   - Linear: pixels map linearly from 20 Hz to Nyquist.
   - Mel: pixels map via mel(f) = 2595*log10(1 + f/700), using inverse to place bins; ticks at perceptual frequencies.
@@ -99,10 +99,6 @@ File layout highlights
     return [r, g, b];
   }
 
-  function formatDb(val) {
-    return `${val.toFixed(1)} dB`;
-  }
-
 /**
  * Waterfall
  * Renders a scrolling spectrogram into a canvas. Uses an offscreen buffer canvas to efficiently scroll
@@ -112,7 +108,7 @@ File layout highlights
  * Options (opts):
  * - contrast: number (default 1.0)
  * - luminosity: number (default 0.0)
- * - logFreq: boolean (default false) — when true, frequency axis uses Mel mapping.
+ * - logFreq: boolean (default false) — when true, the frequency axis uses Mel mapping.
  */
   class Waterfall {
     constructor(canvas, opts) {
@@ -131,13 +127,7 @@ File layout highlights
       this.imageData = this.bctx.createImageData(this.width, 1); // one-row buffer
 
       // Axis/overlay timing and context providers
-      this.lastOverlayTs = 0;
-      this.axisContextProvider = null; // function returning { sampleRate, fftSize, decimation, startedAt, now }
-    }
-
-    clear() {
-      this.bctx.clearRect(0, 0, this.width, this.height);
-      this.ctx.clearRect(0, 0, this.width, this.height);
+      this.axisContextProvider = null;
     }
 
     /**
@@ -229,7 +219,7 @@ File layout highlights
     drawAxes() {
       const ctx = this.ctx;
       ctx.save();
-      // slight translucent background strip at bottom for freq axis
+      // slight translucent background strip at the bottom for freq axis
       ctx.fillStyle = 'rgba(0,0,0,0.4)';
       ctx.fillRect(0, this.height - 22, this.width, 22);
       // and right strip for time axis
@@ -241,13 +231,12 @@ File layout highlights
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
 
-      // Frequency axis along bottom
+      // Frequency axis along the bottom
       const ac = this.axisContextProvider ? this.axisContextProvider() : null;
       const sampleRate = ac && ac.sampleRate ? ac.sampleRate : 48000;
-      const fftSize = ac && ac.fftSize ? ac.fftSize : 2048;
       const nyquist = sampleRate / 2;
       const fmax = Math.min(16000, nyquist);
-      // choose tick step aiming ~8-12 labels (linear scale)
+      // choose a tick step aiming ~8-12 labels (linear scale)
       const targetTicks = Math.max(6, Math.min(12, Math.floor(this.width / 120)));
       const rawStep = fmax / targetTicks;
       const niceSteps = [10,20,50,100,200,500,1000,2000,5000,10000];
@@ -295,13 +284,13 @@ File layout highlights
         }
       }
 
-      // Time axis along right side (top=now, increasing downward)
+      // Time axis along the right side (top=now, increasing downward)
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
       const decim = ac && ac.decimation ? ac.decimation : 20; // rows per second
       // Each pixel row corresponds to 1/decim seconds
       const secondsVisible = this.height / decim;
-      // choose nice time step
+      // choose a nice time step
       const niceTime = [0.2,0.5,1,2,5,10,30,60,120,300,600,1800,3600];
       let tStep = niceTime[0];
       const targetTimeTicks = Math.max(4, Math.min(12, Math.floor(this.height / 80)));
@@ -330,7 +319,7 @@ File layout highlights
  * Two modes:
  * - Analyser path (fftSize ≤ 32768): uses WebAudio AnalyserNode to compute frequency data bytes.
  * - Custom path (fftSize > 32768): captures raw samples via AudioWorklet, applies Hann window, radix-2 FFT,
- *   and computes normalized magnitudes (0..1) relative to current peak.
+ *   and computes normalized magnitudes (0..1) relative to the current peak.
  * Public setters control decimation (rows/s), fftSize, dynamic range, and sensitivity.
  */
   class AudioEngine {
@@ -375,7 +364,6 @@ File layout highlights
      */
     async start(deviceId) {
       if (!this.audio) this.audio = new (window.AudioContext || window.webkitAudioContext)();
-      const sr = this.audio.sampleRate || 48000;
       if (this._running) return;
       this._running = true;
       this._deviceId = deviceId || this._deviceId || 'default';
@@ -444,12 +432,11 @@ File layout highlights
       this.dynRange = Math.max(10, Math.min(140, db));
     }
 
-/** Round to nearest power of two within [32, 1,048,576]. */
+/** Round to the nearest power of two within [32, 1,048,576]. */
     _ensurePowerOfTwo(n) {
-      // return nearest power-of-two integer within [32, 1048576]
+      // return the nearest power-of-two integer within [32, 1048576]
       n = Math.max(32, Math.min(1048576, n|0));
-      const p = 1 << Math.round(Math.log2(n));
-      return p;
+      return 1 << Math.round(Math.log2(n));
     }
 
 /** Set microphone input gain multiplier (sensitivity) in [0.01, 10]. */
@@ -478,8 +465,7 @@ File layout highlights
     }
 
     setHidden(hidden) {
-      const wasHidden = this._hidden;
-      this._hidden = !!hidden;
+      this._hidden = Boolean(hidden);
       // Hidden timers for analyser path to keep producing at a low rate
       if (this._hidden && !this._hiddenTimer) {
         const intervalMs = Math.max(50, Math.round(1000 / Math.min(10, Math.max(1, this.decimation)))) ;
@@ -644,7 +630,7 @@ File layout highlights
     const settings = loadSettings();
     buildUI();
 
-    // Helper to size canvas to fill remaining viewport height under the toolbar
+    // Helper to size canvas to fill the remaining viewport height under the toolbar
     function sizeCanvasToViewport() {
       const vpH = window.innerHeight || document.documentElement.clientHeight;
       const toolbar = document.querySelector('body > div > div'); // the controls div inside container
@@ -658,7 +644,7 @@ File layout highlights
       if (waterfall) waterfall.setSize(r.w, r.h);
     }
 
-    // Create waterfall and engine, then size the canvas and install axis provider
+    // Create a waterfall and engine, then size the canvas and install axis provider
     const waterfall = new Waterfall(ui.canvas, {
       contrast: 1.0,
       luminosity: 0.0,
@@ -753,7 +739,7 @@ File layout highlights
       } catch (e) {
         console.error(e);
         const name = e && (e.name || e.constructor && e.constructor.name) || '';
-        let help = '';
+        let help;
         if (name === 'NotAllowedError' || name === 'SecurityError' || name === 'AbortError') {
           help = 'Microphone permission was not granted. Click Start to try again after allowing access in your browser.';
         } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
@@ -767,7 +753,7 @@ File layout highlights
         ui.startBtn.disabled = false; // re-enable Start for retry
       }
       // After permission, repopulate devices to get labels
-      populateDevices(ui.deviceSelect.value);
+      await populateDevices(ui.deviceSelect.value);
     });
 
     document.addEventListener('visibilitychange', () => {

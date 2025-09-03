@@ -1,6 +1,6 @@
 # Code Review: WebAudio Waterfall Spectrogram
 
-Date: 2025-09-03
+Date: 2025-09-03 20:17
 Reviewer: Automated review by Junie (JetBrains)
 
 ## Summary
@@ -25,8 +25,8 @@ Strengths:
 Areas to improve:
 - Some magic numbers for axis spacing and bounds (e.g., 22px axis height, 48px right margin, 16 kHz clamp) could be centralized as constants.
 - The color map is bespoke; consider documenting the gradient and providing a few presets.
-- Error paths: When microphone permission is denied, Start button remains disabled until refresh—could improve UX by re-enabling and displaying a retry message.
-- Device enumeration message is set in status only on catch; could be surfaced earlier if permissions are not granted.
+- Error paths: Previously, Start button stayed disabled after permission denial. This has been addressed: Start is re-enabled with a clear retry/help message. ~~Re-enable Start after permission errors and show a retry message.~~
+- Device enumeration message is shown early when permissions are not yet granted; labels refresh after permission.
 
 ## Performance
 - Offscreen canvas scroll-and-draw pattern is efficient.
@@ -36,10 +36,11 @@ Areas to improve:
 
 ## Accessibility
 - Index now includes a noscript message. UI elements are standard controls with labels.
-- Consider adding ARIA live region for status updates and ensuring sufficient contrast for text overlay on the canvas.
+- An ARIA live region for status updates is present via role="status" and aria-live="polite".
+- Consider ensuring sufficient contrast for text overlay on the canvas.
 
 ## Security and Privacy
-- Uses getUserMedia for audio; no data is transmitted. Make privacy considerations explicit in README.
+- Uses getUserMedia for audio; no data is transmitted. ~~Make privacy considerations explicit in README.~~
 - Persisted settings do not include sensitive data—OK.
 
 ## Maintainability
@@ -52,11 +53,13 @@ Areas to improve:
 ## Notable Fixes in This Review
 - Fixed HTML structure and metadata in `index.html`, with better indentation and semantics.
 - Corrected a missing semicolon in `colormap` and in the hidden-tab interval setup.
-- Added `README.md` with clear usage instructions.
+- Added `README.md` with clear usage, privacy, troubleshooting, and limitations.
+- Implemented improved error handling on Start: after permission denial, Start is re-enabled and a clear retry/help message is shown.
+- Added an ARIA live region for status updates (role="status", aria-live="polite").
 
 ## Actionable Items
 1. Extract repeated numeric constants to top-level consts for axes and layout.
-2. Improve error handling for denied mic access (re-enable Start, provide help text).
+2. ~~Improve error handling for denied mic access (re-enable Start, provide help text).~~
 3. Consider adding an optional color map selector and document the existing map.
 4. Add simple module structure or TypeScript for scalability if the project grows.
-5. Add accessibility enhancements (ARIA live region for status; keyboard focus styles).
+5. ~~Add accessibility enhancements (ARIA live region for status; keyboard focus styles).~~

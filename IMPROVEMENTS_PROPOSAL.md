@@ -9,7 +9,7 @@ Enhance usability, maintainability, and performance while keeping the app lightw
 ## Short-Term
 - UX and Resilience
   ~~- Re-enable Start after permission errors and show a clear retry message.~~
-  - Add an ARIA live region for status updates; ensure focus management after actions.
+  ~~- Add an ARIA live region for status updates; ensure focus management after actions.~~
 - Config and Constants
   - Extract axis paddings (22px, 48px), frequency clamps (20 Hz, 16 kHz), and fonts into named constants.
   - Move color map parameters to a small module or section with comments.

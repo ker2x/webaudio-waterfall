@@ -6,6 +6,45 @@
 
 Real-time “waterfall” spectrogram of your microphone input in the browser. It uses the Web Audio API for FFT data and Canvas 2D for rendering. No external libraries required.
 
+
+## Privacy
+
+- Your audio stays local in your browser. The app processes microphone data using the Web Audio API and draws pixels to a canvas.
+- No audio is uploaded to any server by this application. There is no analytics or network transmission of audio.
+- You can revoke microphone permission at any time in your browser’s site settings.
+
+### Privacy audit
+
+Audit conclusion: No audio data is sent to any server, never saved or transmitted by the application.
+
+- Audio capture
+  - The app uses getUserMedia to obtain microphone input locally in the browser.
+  - The audio stream is processed entirely in the client (Web Audio API) with an AnalyserNode and a Gain node for sensitivity.
+  - There is no code that streams or uploads captured audio data to any remote server.
+
+- Data flow and processing
+  - Magnitude data (frequency spectrum) is computed and passed to the rendering path in-memory.
+  - The rendering is done on a canvas (and an offscreen buffer) within the browser; no data is transmitted over the network as part of the visualization pipeline.
+  - No attempts to serialize, upload, or send audio or spectral data to a server are present in the code paths.
+
+- Persistence and local storage
+  - Settings are intentionally not persisted: saveSettings(s) is a no-op.
+  - This means no microphone or usage data is stored locally beyond in-memory runtime state.
+
+- Networking and external calls
+  - There are no fetch/XHR/WebSocket calls or analytics hooks in the provided code that would transmit audio or usage data.
+  - The UI and rendering logic operate entirely on-device.
+
+- Security/privacy notes
+  - Since microphone data remains in the browser’s memory and is not uploaded, the design aligns with a privacy-preserving, local-only workflow.
+  - When permission is granted, the application operates only locally; there is no evidence of data leaving the client.
+
+Bottom line
+
+- No audio data is sent to servers, anonymized or otherwise.
+- No audio data is saved or persisted to disk or remote endpoints.
+- No server communications are invoked by the code for audio or spectral data.
+
 ## Features
 - Live spectrogram rendering with adjustable FFT size, decimation (lines per second), and dynamic range.
 - Visual controls: contrast, luminosity (brightness), and input sensitivity (microphone gain).
@@ -36,11 +75,6 @@ Real-time “waterfall” spectrogram of your microphone input in the browser. I
 
 ## Browser Permissions
 The app requires microphone access. If you don’t see device labels, click Start once to grant permission and the device list will refresh.
-
-## Privacy
-- Your audio stays local in your browser. The app processes microphone data using the Web Audio API and draws pixels to a canvas.
-- No audio is uploaded to any server by this application. There is no analytics or network transmission of audio.
-- You can revoke microphone permission at any time in your browser’s site settings.
 
 ## Troubleshooting
 - I clicked Start but nothing happens / permission denied:

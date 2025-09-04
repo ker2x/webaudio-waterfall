@@ -30,12 +30,6 @@ Enhance usability, maintainability, and performance while keeping the app lightw
   - Introduce a “max FPS” cap to decouple draw rate from rAF on fast machines.
 
 ## Longer-Term
-- Custom FFT Path (Beyond 32768)
-  - Implement an AudioWorklet-based sample capture and JS/WASM radix-2 FFT for very large windows.
-  - Add window functions (Hann, Hamming, Blackman) and overlap options.
-- Export and Sharing
-  - Allow exporting a PNG snapshot and/or short MP4 of the canvas.
-  - Add option to log peak frequencies or save averaged spectra.
 - Modularity and Types
   - Split into ES modules: renderer, engine, ui, utils.
   - Consider TypeScript for stronger typings and better editor experience.

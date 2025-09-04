@@ -5,7 +5,7 @@ Overview
 - Purpose: Real-time and long-term spectrogram ("waterfall") visualization of microphone input in the browser.
 - Dependencies: None (vanilla JS + Web Audio API + Canvas 2D).
 - Key features:
-  - Configurable FFT size (up to 1,048,576 using a custom FFT path), decimation (rows per second), dynamic range.
+  - Configurable FFT size (up to 32,768 via AnalyserNode), decimation (rows per second), dynamic range.
   - Visual controls: contrast, luminosity (brightness), microphone sensitivity (input gain).
   - Frequency axis at the bottom (linear or Mel scale with 20 Hz lower bound); time axis at the right.
   - Persistence of settings in localStorage.
@@ -15,10 +15,8 @@ Architecture at a glance
 - UI bootstrapping: buildUI() dynamically creates controls and canvas, and populateDevices() fills input selector.
 - Settings: loadSettings()/saveSettings() persist user adjustments between sessions.
 - Rendering: class Waterfall draws rows to an offscreen canvas then blits to the visible canvas; also draws axes + overlay.
-- Audio processing: class AudioEngine routes microphone to either:
-  - AnalyserNode path for FFT sizes ≤ 32768 (native FFT), or
-  - Custom path for FFT sizes > 32768 using an AudioWorklet to capture samples and a JS radix-2 FFT.
-- Data flow: mic → input GainNode (sensitivity) → [AnalyserNode | AudioWorkletNode] → magnitudes → Waterfall.drawRow().
+- Audio processing: class AudioEngine uses a Web Audio AnalyserNode for FFT sizes up to 32768 (native maximum).
+- Data flow: mic → input GainNode (sensitivity) → AnalyserNode → magnitudes → Waterfall.drawRow().
 
 Coordinate system and axes
 - Horizontal: frequency from left (low) to right (high). Minimum frequency is clamped to 20 Hz.
@@ -28,14 +26,13 @@ Coordinate system and axes
 
 Performance notes
 - Offscreen canvas is used to scroll content by 1 px per row (fast blit instead of repainting the whole image).
-- In custom FFT mode, processing cadence is limited by decimation and a fraction of the window length to avoid CPU spikes.
-- For very large FFTs, consider lowering decimation to < 1 row/s to visualize long windows.
+- FFT sizes are capped to the AnalyserNode maximum (32768). Larger values are not supported in this build.
+- For large FFTs near the cap, consider lowering decimation to reduce CPU usage.
 
 File layout highlights
 - Helper functions: $, loadSettings/saveSettings, colormap, formatDb.
 - Class Waterfall: rendering pipeline, axes, overlay, contrast/brightness application.
-- Class AudioEngine: start/stop, analyser vs custom-FFT selection, decimation, dynamic range normalization, sensitivity.
-- FFT helpers: hannWindow(), bitReverseIndices(), fftRadix2().
+- Class AudioEngine: start/stop, decimation, dynamic range normalization, sensitivity; uses AnalyserNode for FFT.
 - App bootstrap: startApp() wires UI, Waterfall, and AudioEngine together.
 */
 
@@ -316,10 +313,7 @@ File layout highlights
 /**
  * AudioEngine
  * Captures microphone audio and provides magnitude spectra frames to a callback.
- * Two modes:
- * - Analyser path (fftSize ≤ 32768): uses WebAudio AnalyserNode to compute frequency data bytes.
- * - Custom path (fftSize > 32768): captures raw samples via AudioWorklet, applies Hann window, radix-2 FFT,
- *   and computes normalized magnitudes (0..1) relative to the current peak.
+ * Uses Web Audio AnalyserNode for all supported FFT sizes.
  * Public setters control decimation (rows/s), fftSize, dynamic range, and sensitivity.
  */
   class AudioEngine {
@@ -358,8 +352,7 @@ File layout highlights
     }
 
 /**
-     * Start audio capture and processing.
-     * Chooses analyser vs custom path based on fftSize, then begins frame production.
+     * Start audio capture and processing using AnalyserNode.
      * @param {string} deviceId
      */
     async start(deviceId) {
@@ -427,7 +420,7 @@ File layout highlights
     }
 
 
-/** Set visual dynamic range in dB (used to map analyser/custom magnitudes into [0,1]). */
+/** Set visual dynamic range in dB (used to map analyser magnitudes into [0,1]). */
     setDynRange(db) {
       this.dynRange = Math.max(10, Math.min(140, db));
     }

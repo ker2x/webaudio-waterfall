@@ -31,7 +31,7 @@ Areas to improve:
 ## Performance
 - Offscreen canvas scroll-and-draw pattern is efficient.
 - AnalyserNode read and mapping are O(N) per row; reasonable for typical FFT sizes.
-- For very large FFTs (>32768), the code mentions a custom FFT path in the top comment, but the current implementation caps to 32768. If custom FFT is planned, it’s not implemented yet.
+- FFT sizes are capped to 32768 (AnalyserNode maximum); no custom large-FFT path is present in this build.
 - Hidden tab handling queues rows to avoid DOM work; a periodic interval keeps limited progress—sensible. Consider clamping queue growth more aggressively or switching to a drop-new strategy to reduce memory when hidden for long periods.
 
 ## Accessibility

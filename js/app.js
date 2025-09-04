@@ -49,27 +49,18 @@ File layout highlights
     status: null,
   };
 
-/**
- * Load persisted settings from localStorage.
- * Returns a settings object with sane defaults if none are stored or parsing fails.
- * Keys: deviceId, fftSize, decimation, dynRange, contrast, luminosity, sensitivity, logFreqScale
- */
   function loadSettings() {
-    try {
-      const s = JSON.parse(localStorage.getItem('waterfall_settings') || '{}');
-      return Object.assign({
-        deviceId: 'default',
-        fftSize: 2048,
-        decimation: 20, // rows per second
-        dynRange: 80, // dB dynamic range
-        contrast: 1.0, // visual contrast multiplier
-        luminosity: 0.0, // visual brightness offset
-        sensitivity: 1.0, // input gain multiplier
-        logFreqScale: true, // linear vs log frequency scale (default: Mel)
-      }, s);
-    } catch (e) {
-      return { deviceId: 'default', fftSize: 2048, decimation: 20, dynRange: 80, contrast: 1.0, luminosity: 0.0, sensitivity: 1.0, logFreqScale: true };
-    }
+    // Return defaults every time to ensure no persistence across reloads
+    return {
+      deviceId: 'default',
+      fftSize: 32768,
+      decimation: 10, // rows per second
+      dynRange: 80, // dB dynamic range
+      contrast: 1.5, // visual contrast multiplier
+      luminosity: 0.0, // visual brightness offset
+      sensitivity: 5.0, // input gain multiplier
+      logFreqScale: true, // linear vs log frequency scale (default: Mel)
+    };
   }
 
 /**
@@ -77,7 +68,7 @@ File layout highlights
  * @param {Object} s
  */
   function saveSettings(s) {
-    localStorage.setItem('waterfall_settings', JSON.stringify(s));
+    // Intentionally do nothing to disable persistence
   }
 
   // Color map: maps 0..1 -> RGB
@@ -334,7 +325,7 @@ File layout highlights
       this.dynRange = 80; // dB
       this.minDecibels = -100;
       this.maxDecibels = -20;
-      this.sensitivity = 1.0; // gain multiplier
+      this.sensitivity = 5.0; // gain multiplier
       this._timer = 0;
       this._nextDue = 0;
       this._freqData = null;

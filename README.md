@@ -1,5 +1,9 @@
 # WebAudio Waterfall Spectrogram
 
+## Demo
+
+[https://ker2x.github.io/webaudio-waterfall/](https://ker2x.github.io/webaudio-waterfall/)
+
 Real-time “waterfall” spectrogram of your microphone input in the browser. It uses the Web Audio API for FFT data and Canvas 2D for rendering. No external libraries required.
 
 ## Features

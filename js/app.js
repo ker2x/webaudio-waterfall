@@ -55,10 +55,10 @@ File layout highlights
       deviceId: 'default',
       fftSize: 32768,
       decimation: 10, // rows per second
-      dynRange: 80, // dB dynamic range
+      dynRange: 100, // dB dynamic range
       contrast: 1.5, // visual contrast multiplier
       luminosity: 0.0, // visual brightness offset
-      sensitivity: 5.0, // input gain multiplier
+      sensitivity: 10.0, // input gain multiplier
       logFreqScale: true, // linear vs log frequency scale (default: Mel)
     };
   }
